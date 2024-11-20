@@ -1,9 +1,10 @@
-import React, { useState, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import Webcam from 'react-webcam';
-import * as faceDetection from '@tensorflow-models/face-detection';
-import { CheckCircle2, AlertCircle, Scan } from 'lucide-react';
-import LoadingSpinner from '../components/LoadingSpinner';
+import React, { useState, useCallback, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import Webcam from "react-webcam";
+import * as tf from "@tensorflow/tfjs";
+import * as faceDetection from "@tensorflow-models/face-detection";
+import { CheckCircle2, AlertCircle, Scan } from "lucide-react";
+import LoadingSpinner from "../components/LoadingSpinner";
 
 const AuthenticationPage = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -11,17 +12,34 @@ const AuthenticationPage = () => {
   const webcamRef = useRef(null);
   const navigate = useNavigate();
 
+  // Set TensorFlow.js backend to WebGL when the component mounts
+  useEffect(() => {
+    async function setBackend() {
+      try {
+        await tf.setBackend("webgl"); // Set WebGL backend for performance
+        console.log("Backend set to WebGL");
+      } catch (error) {
+        console.error("Error setting WebGL backend:", error);
+      }
+    }
+    setBackend();
+  }, []);
+
   const handleAuthenticate = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
 
+      // Explicitly define runtime in model options
       const model = await faceDetection.createDetector(
-        faceDetection.SupportedModels.MediaPipeFaceDetector
+        faceDetection.SupportedModels.MediaPipeFaceDetector,
+        {
+          runtime: "tfjs", // Specify tfjs as the runtime for the model
+        }
       );
 
       const imageSrc = webcamRef.current?.getScreenshot();
-      if (!imageSrc) throw new Error('Failed to capture image');
+      if (!imageSrc) throw new Error("Failed to capture image");
 
       const img = new Image();
       img.src = imageSrc;
@@ -30,20 +48,24 @@ const AuthenticationPage = () => {
       const faces = await model.estimateFaces(img);
 
       if (faces.length === 0) {
-        throw new Error('No face detected. Please ensure you are clearly visible in the camera.');
+        throw new Error(
+          "No face detected. Please ensure you are clearly visible in the camera."
+        );
       }
 
       if (faces.length > 1) {
-        throw new Error('Multiple faces detected. Please ensure only one person is in frame.');
+        throw new Error(
+          "Multiple faces detected. Please ensure only one person is in frame."
+        );
       }
 
       // Simulate API call for authentication
       setTimeout(() => {
         setIsLoading(false);
-        navigate('/profile/1');
+        navigate("/profile/1");
       }, 1500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Authentication failed');
+      setError(err instanceof Error ? err.message : "Authentication failed");
       setIsLoading(false);
     }
   }, [navigate]);
@@ -52,10 +74,10 @@ const AuthenticationPage = () => {
     <div className="min-h-screen bg-white text-gray-900">
       <div className="container mx-auto px-4 py-8 flex flex-col items-center">
         {/* Header Section */}
-        <div className="flex items-center justify-center gap-12 mb-6">
-          <img src="/logos/logo1.png" alt="Logo 1" className="h-16 w-auto" />
-          <img src="/logos/logo2.png" alt="Logo 2" className="h-16 w-auto" />
-          <img src="/logos/logo3.png" alt="Logo 3" className="h-16 w-auto" />
+        <div className="flex items-center justify-center gap-20 mb-10">
+          <img src="/logos/logo1.png" alt="Logo 1" className="h-24 w-auto" />
+          <img src="/logos/logo2.png" alt="Logo 2" className="h-24 w-auto" />
+          <img src="/logos/logo3.png" alt="Logo 3" className="h-24 w-auto" />
         </div>
         <h1 className="text-lg md:text-xl font-semibold text-center mb-6">
           Secure Encryption and Authentication Model
@@ -88,18 +110,22 @@ const AuthenticationPage = () => {
                      flex items-center justify-center gap-2"
           >
             <Scan className="w-5 h-5" />
-            {isLoading ? 'Authenticating...' : 'Authenticate'}
+            {isLoading ? "Authenticating..." : "Authenticate"}
           </button>
 
           {/* Guidelines */}
           <div className="mt-4 space-y-3">
             <div className="flex items-center gap-2 text-green-600">
               <CheckCircle2 className="w-5 h-5" />
-              <p className="text-sm">Ensure good lighting and face the camera directly</p>
+              <p className="text-sm">
+                Ensure good lighting and face the camera directly
+              </p>
             </div>
             <div className="flex items-center gap-2 text-red-600">
               <AlertCircle className="w-5 h-5" />
-              <p className="text-sm">Remove any face coverings or accessories</p>
+              <p className="text-sm">
+                Remove any face coverings or accessories
+              </p>
             </div>
           </div>
 

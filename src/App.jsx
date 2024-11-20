@@ -1,7 +1,7 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import AuthenticationPage from './pages/AuthenticationPage';
-import ProfilePage from './pages/ProfilePage';
+import React from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import AuthenticationPage from "./pages/AuthenticationPage";
+import ProfilePage from "./pages/ProfilePage";
 
 function App() {
   return (

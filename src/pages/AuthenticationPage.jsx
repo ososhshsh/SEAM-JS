@@ -12,54 +12,58 @@ const AuthenticationPage = () => {
   const webcamRef = useRef(null);
   const navigate = useNavigate();
 
-  // Set TensorFlow.js backend to WebGL when the component mounts
+  // Set TensorFlow.js backend to WebGL for better performance
   useEffect(() => {
-    async function setBackend() {
+    const setBackend = async () => {
       try {
-        await tf.setBackend("webgl"); // Set WebGL backend for performance
+        await tf.setBackend("webgl");
         console.log("Backend set to WebGL");
-      } catch (error) {
-        console.error("Error setting WebGL backend:", error);
+      } catch (err) {
+        console.error("Error setting WebGL backend:", err);
       }
-    }
+    };
     setBackend();
   }, []);
 
+  // Function to handle authentication
   const handleAuthenticate = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      // Explicitly define runtime in model options
+      // Load the face detection model
       const model = await faceDetection.createDetector(
         faceDetection.SupportedModels.MediaPipeFaceDetector,
         {
-          runtime: "tfjs", // Specify tfjs as the runtime for the model
+          runtime: "tfjs",
         }
       );
 
+      // Capture a screenshot from the webcam
       const imageSrc = webcamRef.current?.getScreenshot();
-      if (!imageSrc) throw new Error("Failed to capture image");
+      if (!imageSrc) throw new Error("Failed to capture image from webcam");
 
+      // Create an image object and decode the captured screenshot
       const img = new Image();
       img.src = imageSrc;
       await img.decode();
 
+      // Detect faces in the image
       const faces = await model.estimateFaces(img);
 
-      if (faces.length === 0) {
+      if (!faces || faces.length === 0) {
         throw new Error(
-          "No face detected. Please ensure you are clearly visible in the camera."
+          "No face detected. Please ensure your face is clearly visible in the camera."
         );
       }
 
       if (faces.length > 1) {
         throw new Error(
-          "Multiple faces detected. Please ensure only one person is in frame."
+          "Multiple faces detected. Please ensure only one person is in the frame."
         );
       }
 
-      // Simulate API call for authentication
+      // Simulate authentication success
       setTimeout(() => {
         setIsLoading(false);
         navigate("/profile/1");
@@ -104,10 +108,11 @@ const AuthenticationPage = () => {
           <button
             onClick={handleAuthenticate}
             disabled={isLoading}
-            className="w-full py-3 px-6 bg-green-600 hover:bg-green-700 disabled:bg-green-300 
-                     text-white disabled:cursor-not-allowed rounded-xl font-semibold 
-                     transition-colors shadow-lg hover:shadow-xl disabled:shadow-none
-                     flex items-center justify-center gap-2"
+            className={`w-full py-3 px-6 rounded-xl font-semibold shadow-lg transition-colors flex items-center justify-center gap-2 ${
+              isLoading
+                ? "bg-green-300 text-white cursor-not-allowed"
+                : "bg-green-600 hover:bg-green-700 text-white"
+            }`}
           >
             <Scan className="w-5 h-5" />
             {isLoading ? "Authenticating..." : "Authenticate"}

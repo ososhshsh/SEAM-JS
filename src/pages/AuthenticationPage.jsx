@@ -2,64 +2,87 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Webcam from "react-webcam";
 import * as tf from "@tensorflow/tfjs";
-import * as faceDetection from "@tensorflow-models/face-detection";
 import { CheckCircle2, AlertCircle, Scan } from "lucide-react";
 import LoadingSpinner from "../components/LoadingSpinner";
 
 const AuthenticationPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [livenessVerified, setLivenessVerified] = useState(false);
+  const [livenessChallenge, setLivenessChallenge] = useState("Blink Twice");
   const webcamRef = useRef(null);
+  const canvasRef = useRef(null);
   const navigate = useNavigate();
+  const [model, setModel] = useState(null); // State to hold the pretrained Xception model
 
-  // Set TensorFlow.js backend to WebGL when the component mounts
+  // Load pretrained Xception model
   useEffect(() => {
-    async function setBackend() {
+    async function loadModel() {
       try {
-        await tf.setBackend("webgl"); // Set WebGL backend for performance
-        console.log("Backend set to WebGL");
+        // Load pretrained Xception model from TF Hub or other source
+        const loadedModel = await tf.loadLayersModel(
+          "https://cdn.jsdelivr.net/npm/@tensorflow-models/xception/xception_model.json"
+        );
+        setModel(loadedModel); // Set the model to state
+        console.log("XceptionNet model loaded successfully.");
       } catch (error) {
-        console.error("Error setting WebGL backend:", error);
+        console.error("Error loading the XceptionNet model:", error);
       }
     }
-    setBackend();
+    loadModel();
   }, []);
 
+  // Webcam and TensorFlow.js setup
+  useEffect(() => {
+    const canvasElement = canvasRef.current;
+    const canvasCtx = canvasElement.getContext("2d");
+
+    const processVideo = async () => {
+      const video = webcamRef.current.video;
+      if (!video || video.readyState !== 4 || !model) return; // Ensure video is ready and model is loaded
+
+      // Capture frame from webcam
+      const videoFrame = tf.browser.fromPixels(video);
+      const resizedFrame = tf.image.resizeBilinear(videoFrame, [299, 299]); // Resize frame for Xception input
+      const normalizedFrame = resizedFrame.div(255.0).expandDims(0); // Normalize and add batch dimension
+
+      // Predict if the person is live or spoofed
+      const prediction = await model.predict(normalizedFrame);
+      const predictionValue = prediction.dataSync()[0];
+
+      // If prediction value > 0.5, consider it a live face
+      if (predictionValue > 0.5) {
+        setLivenessVerified(true); // Person is live
+      } else {
+        setLivenessVerified(false); // Person is spoofed
+      }
+
+      // Draw the webcam frame on canvas (for visualization)
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.drawImage(
+        video,
+        0,
+        0,
+        canvasElement.width,
+        canvasElement.height
+      );
+
+      requestAnimationFrame(processVideo); // Loop the process
+    };
+
+    processVideo(); // Start processing video frames
+  }, [model]);
+
   const handleAuthenticate = useCallback(async () => {
+    if (!livenessVerified) {
+      setError("Liveness not verified. Please complete the challenge.");
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError(null);
 
-      // Explicitly define runtime in model options
-      const model = await faceDetection.createDetector(
-        faceDetection.SupportedModels.MediaPipeFaceDetector,
-        {
-          runtime: "tfjs", // Specify tfjs as the runtime for the model
-        }
-      );
-
-      const imageSrc = webcamRef.current?.getScreenshot();
-      if (!imageSrc) throw new Error("Failed to capture image");
-
-      const img = new Image();
-      img.src = imageSrc;
-      await img.decode();
-
-      const faces = await model.estimateFaces(img);
-
-      if (faces.length === 0) {
-        throw new Error(
-          "No face detected. Please ensure you are clearly visible in the camera."
-        );
-      }
-
-      if (faces.length > 1) {
-        throw new Error(
-          "Multiple faces detected. Please ensure only one person is in frame."
-        );
-      }
-
-      // Simulate API call for authentication
       setTimeout(() => {
         setIsLoading(false);
         navigate("/profile/1");
@@ -68,12 +91,11 @@ const AuthenticationPage = () => {
       setError(err instanceof Error ? err.message : "Authentication failed");
       setIsLoading(false);
     }
-  }, [navigate]);
+  }, [navigate, livenessVerified]);
 
   return (
     <div className="min-h-screen bg-white text-gray-900">
       <div className="container mx-auto px-4 py-8 flex flex-col items-center">
-        {/* Header Section */}
         <div className="flex items-center justify-center gap-20 mb-10">
           <img src="/logos/logo1.png" alt="Logo 1" className="h-24 w-auto" />
           <img src="/logos/logo2.png" alt="Logo 2" className="h-24 w-auto" />
@@ -83,9 +105,7 @@ const AuthenticationPage = () => {
           Secure Encryption and Authentication Model
         </h1>
 
-        {/* Main Content */}
         <div className="max-w-xl w-full bg-gray-50 rounded-2xl p-6 shadow-lg border border-gray-200">
-          {/* Webcam Container */}
           <div className="relative mb-4 rounded-lg overflow-hidden bg-gray-100 border-2 border-gray-200 aspect-w-16 aspect-h-9">
             <Webcam
               ref={webcamRef}
@@ -93,6 +113,10 @@ const AuthenticationPage = () => {
               screenshotFormat="image/jpeg"
               className="w-full h-full object-cover"
             />
+            <canvas
+              ref={canvasRef}
+              className="absolute top-0 left-0 w-full h-full"
+            ></canvas>
             {isLoading && (
               <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center">
                 <LoadingSpinner />
@@ -100,7 +124,12 @@ const AuthenticationPage = () => {
             )}
           </div>
 
-          {/* Action Button */}
+          <div className="mb-4 text-center text-sm text-gray-600">
+            {livenessVerified
+              ? "Liveness Verified! You may now proceed."
+              : `Please ${livenessChallenge}.`}
+          </div>
+
           <button
             onClick={handleAuthenticate}
             disabled={isLoading}
@@ -113,23 +142,6 @@ const AuthenticationPage = () => {
             {isLoading ? "Authenticating..." : "Authenticate"}
           </button>
 
-          {/* Guidelines */}
-          <div className="mt-4 space-y-3">
-            <div className="flex items-center gap-2 text-green-600">
-              <CheckCircle2 className="w-5 h-5" />
-              <p className="text-sm">
-                Ensure good lighting and face the camera directly
-              </p>
-            </div>
-            <div className="flex items-center gap-2 text-red-600">
-              <AlertCircle className="w-5 h-5" />
-              <p className="text-sm">
-                Remove any face coverings or accessories
-              </p>
-            </div>
-          </div>
-
-          {/* Error Message */}
           {error && (
             <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
               <div className="flex gap-3">
@@ -140,7 +152,6 @@ const AuthenticationPage = () => {
           )}
         </div>
 
-        {/* Footer */}
         <div className="text-center mt-6 text-gray-500 text-sm">
           © SEAM Authentication System 2024. All rights reserved.
         </div>

@@ -1,41 +1,36 @@
-// Correctly export the model loading function and the liveness checking function
-export const loadFaceLandmarksModel = async () => {
-  await tf.ready(); // Ensure TensorFlow.js is ready
-  const model = await faceLandmarksDetection.load(
-    faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh
+import * as tf from "@tensorflow/tfjs";
+import * as faceDetection from "@tensorflow-models/face-detection";
+
+// Load the face detection model
+const loadFaceDetectionModel = async () => {
+  await tf.setBackend("webgl");
+  const model = await faceDetection.createDetector(
+    faceDetection.SupportedModels.MediaPipeFaceDetector,
+    {
+      runtime: "tfjs",
+    }
   );
   return model;
 };
 
-export const checkLiveness = async (img, face) => {
-  const model = await loadFaceLandmarksModel();
-
-  const predictions = await model.estimateFaces({
-    input: img,
-  });
-
-  if (predictions.length === 0) {
-    console.log("No landmarks detected - liveness failed");
-    return false;
-  }
-
-  const faceLandmarks = predictions[0].scaledMesh;
-  const eyesClosed = checkForBlink(faceLandmarks);
-  if (!eyesClosed) {
-    console.log("No blink detected - liveness failed");
-    return false;
-  }
-
-  console.log("Blink detected - liveness passed");
-  return true;
+// Detect faces in the image
+const detectFace = async (model, image) => {
+  const faces = await model.estimateFaces(image);
+  return faces;
 };
 
-const checkForBlink = (landmarks) => {
-  const leftEye = landmarks.slice(133, 144); // Left eye landmarks
-  const rightEye = landmarks.slice(362, 374); // Right eye landmarks
+// Check if liveness is detected (simplified)
+const checkLiveness = async (image) => {
+  const model = await loadFaceDetectionModel();
+  const faces = await detectFace(model, image);
 
-  const isLeftEyeClosed = leftEye.some((point) => point[1] < 0.5);
-  const isRightEyeClosed = rightEye.some((point) => point[1] < 0.5);
+  if (faces.length === 0) {
+    throw new Error("No face detected");
+  }
 
-  return isLeftEyeClosed && isRightEyeClosed;
+  // Simulate liveness check (a real implementation would involve more complex checks)
+  return faces.length === 1; // Valid liveness if only one face detected
 };
+
+// Export functions individually
+export { loadFaceDetectionModel, detectFace, checkLiveness };

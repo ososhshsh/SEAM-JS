@@ -4,80 +4,108 @@ import Webcam from "react-webcam";
 import * as tf from "@tensorflow/tfjs";
 import { CheckCircle2, AlertCircle, Scan } from "lucide-react";
 import LoadingSpinner from "../components/LoadingSpinner";
-import { loadFaceLandmarksModel, checkLiveness } from "../utils/checkLiveness"; // Import the correct function
+import { checkLiveness } from "../utils/checkLiveness"; // Correct import
+import {
+  loadModels,
+  computeFaceDescriptor,
+  findBestMatch,
+} from "../utils/faceRecognition";
 
 const AuthenticationPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [isLive, setIsLive] = useState(null); // Track liveness status
+  const [isLive, setIsLive] = useState(null);
+  const [matchedFace, setMatchedFace] = useState(null);
   const webcamRef = useRef(null);
   const navigate = useNavigate();
+  const [dataset, setDataset] = useState([]); // Storing the descriptors
 
   useEffect(() => {
-    async function setBackend() {
+    const initialize = async () => {
       try {
-        await tf.setBackend("webgl");
-        console.log("Backend set to WebGL");
-      } catch (error) {
-        console.error("Error setting WebGL backend:", error);
+        await tf.setBackend("webgl"); // Set TensorFlow backend
+        console.log("TensorFlow backend set to WebGL");
+
+        // Load the face recognition models
+        await loadModels();
+
+        // Load dataset images and compute their face descriptors
+        const datasetFolder = `${process.env.PUBLIC_URL}/dataset/`;
+        const imageNames = ["1.jpg", "2.jpg", "3.jpg"]; // Add all dataset filenames
+
+        const descriptors = [];
+        for (const name of imageNames) {
+          const img = new Image();
+          img.src = `${datasetFolder}${name}`;
+          await img.decode(); // Ensure image is loaded
+          const descriptor = await computeFaceDescriptor(img);
+          if (descriptor) {
+            descriptors.push({ name, descriptor });
+          }
+        }
+        setDataset(descriptors); // Save dataset in state
+        console.log("Dataset initialized:", descriptors);
+      } catch (err) {
+        console.error("Error initializing models or dataset:", err);
+        setError("Failed to initialize the authentication system.");
       }
-    }
-    setBackend();
-  }, []);
+    };
+
+    initialize();
+  }, []); // Run only once on component mount
 
   const handleAuthenticate = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
-      setIsLive(null); // Reset liveness state
+      setIsLive(null);
+      setMatchedFace(null);
 
-      // Load the face detection and face landmarks models
-      const faceDetectionModel = await loadFaceDetectionModel();
-      const landmarksModel = await loadFaceLandmarksModel();
-
+      // Capture the image from the webcam
       const imageSrc = webcamRef.current?.getScreenshot();
-      if (!imageSrc) throw new Error("Failed to capture image");
+      if (!imageSrc) throw new Error("Failed to capture image from webcam.");
 
       const img = new Image();
       img.src = imageSrc;
       await img.decode();
 
-      // Detect faces using BlazeFace
-      const faces = await faceDetectionModel.estimateFaces(img);
-
-      if (faces.length === 0) {
-        throw new Error(
-          "No face detected. Please ensure you are clearly visible in the camera."
-        );
-      }
-
-      if (faces.length > 1) {
-        throw new Error(
-          "Multiple faces detected. Please ensure only one person is in frame."
-        );
-      }
-
-      // Check for liveness (both blink and head motion)
-      const isHumanLive = await checkLiveness(img, faces[0]);
+      // Perform liveness detection
+      const isHumanLive = await checkLiveness(img); // Check liveness
       if (!isHumanLive) {
         throw new Error(
-          "Liveness detection failed. Please ensure you're showing a real face."
+          "Liveness detection failed. Ensure you're showing a real face."
+        );
+      }
+      setIsLive(true);
+
+      // Compute the face descriptor for the captured image
+      const webcamDescriptor = await computeFaceDescriptor(img);
+      if (!webcamDescriptor) {
+        throw new Error(
+          "No face detected. Ensure your face is clearly visible."
         );
       }
 
-      setIsLive(true); // Liveness is confirmed
+      // Find the best match from the dataset
+      const match = findBestMatch(webcamDescriptor, dataset);
+      if (!match) {
+        throw new Error("No matching face found in the dataset.");
+      }
 
-      // Simulate successful authentication
+      setMatchedFace(match.name); // Save the matched face ID
+
+      // Navigate to the profile page with the matched face ID
       setTimeout(() => {
         setIsLoading(false);
-        navigate("/profile/1");
+        navigate(`/profile/${match.name.split(".")[0]}`);
       }, 1500);
     } catch (err) {
-      setIsLive(false); // If error occurs, set liveness to false
-      setError(err instanceof Error ? err.message : "Authentication failed");
+      console.error("Authentication error:", err);
+      setIsLive(false);
+      setError(err.message || "Authentication failed.");
       setIsLoading(false);
     }
-  }, [navigate]);
+  }, [dataset, navigate]);
 
   return (
     <div className="min-h-screen bg-white text-gray-900">
@@ -115,31 +143,15 @@ const AuthenticationPage = () => {
             {isLoading ? "Authenticating..." : "Authenticate"}
           </button>
 
-          {/* Liveness Status */}
-          {isLive !== null && (
-            <div
-              className={`mt-4 p-4 ${
-                isLive
-                  ? "bg-green-50 border-green-200"
-                  : "bg-red-50 border-red-200"
-              } rounded-lg`}
-            >
+          {matchedFace && (
+            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
               <div className="flex gap-3">
-                {isLive ? (
-                  <CheckCircle2 className="w-5 h-5 text-green-600" />
-                ) : (
-                  <AlertCircle className="w-5 h-5 text-red-600" />
-                )}
-                <p className={isLive ? "text-green-800" : "text-red-800"}>
-                  {isLive
-                    ? "Liveness confirmed!"
-                    : "Liveness detection failed. Try again."}
-                </p>
+                <CheckCircle2 className="w-5 h-5 text-green-600" />
+                <p className="text-green-800">Matched Face: {matchedFace}</p>
               </div>
             </div>
           )}
 
-          {/* Error Message */}
           {error && (
             <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
               <div className="flex gap-3">
